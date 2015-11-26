@@ -19,11 +19,15 @@ import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.LatLng;
+import com.iamkaan.whatstheweather.listener.WeatherInfoFetchListener;
+import com.iamkaan.whatstheweather.util.WeatherHelper;
+import com.iamkaan.whatstheweather.util.model.Weather;
+
 
 public class MainActivity extends FragmentActivity implements
         OnMapReadyCallback,
         ActivityCompat.OnRequestPermissionsResultCallback,
-        GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener, LocationListener {
+        GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener, LocationListener, WeatherInfoFetchListener {
 
     private static final int PERMISSION_REQUEST_ACCESS_FINE_LOCATION = 0;
 
@@ -124,6 +128,8 @@ public class MainActivity extends FragmentActivity implements
                 map.animateCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(latitude, longitude), 15f));
             }
 
+            WeatherHelper.getWeatherInfo(getApplicationContext(), location, this);
+
             userLocation = location;
         }
     }
@@ -135,6 +141,16 @@ public class MainActivity extends FragmentActivity implements
 
     @Override
     public void onConnectionFailed(ConnectionResult connectionResult) {
+
+    }
+
+    @Override
+    public void onFetch(Weather result) {
+
+    }
+
+    @Override
+    public void onError(Exception exception) {
 
     }
 }
