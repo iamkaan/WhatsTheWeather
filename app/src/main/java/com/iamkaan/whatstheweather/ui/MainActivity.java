@@ -5,13 +5,17 @@ import android.animation.ArgbEvaluator;
 import android.animation.ValueAnimator;
 import android.content.pm.PackageManager;
 import android.graphics.drawable.ColorDrawable;
+import android.location.Address;
+import android.location.Geocoder;
 import android.location.Location;
 import android.os.Bundle;
+import android.os.PersistableBundle;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.FragmentActivity;
 import android.support.v4.content.ContextCompat;
 import android.view.View;
+import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.TextView;
 
@@ -31,30 +35,63 @@ import com.iamkaan.whatstheweather.util.WeatherHelper;
 import com.iamkaan.whatstheweather.util.model.Weather;
 import com.squareup.picasso.Picasso;
 
+import java.io.IOException;
+import java.util.List;
+import java.util.Locale;
+
+import butterknife.Bind;
+import butterknife.ButterKnife;
 
 public class MainActivity extends FragmentActivity implements
         OnMapReadyCallback,
         ActivityCompat.OnRequestPermissionsResultCallback,
-        GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener, LocationListener, WeatherInfoFetchListener {
+        GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener, LocationListener, WeatherInfoFetchListener, View.OnClickListener {
 
     private static final int PERMISSION_REQUEST_ACCESS_FINE_LOCATION = 0;
+    private static final String STATE_LAT = "lat";
+    private static final String STATE_LNG = "lng";
 
+    @Bind(R.id.icon)
     ImageView icon;
-    TextView currentTemp;
-    TextView weatherText;
+
+    @Bind(R.id.progress_message)
+    TextView progressMessage;
+    @Bind(R.id.day_high_low)
     TextView weatherHighLow;
+    @Bind(R.id.current_temp)
+    TextView currentTemp;
+    @Bind(R.id.day_text)
+    TextView weatherText;
+    @Bind(R.id.location)
+    TextView location;
+
+    @Bind(R.id.whats_the_weather)
+    Button whatsTheWeather;
+    @Bind(R.id.error_button)
+    Button errorButton;
+
+    @Bind(R.id.progress_bar)
+    View progressBar;
+    @Bind(R.id.progress)
+    View progress;
+    @Bind(R.id.root)
     View rootView;
+    @Bind(R.id.info)
     View info;
+    @Bind(R.id.pin)
+    View pin;
 
     GoogleApiClient googleApiClient;
     LocationRequest locationRequest;
     Location userLocation;
+    Location pinLocation;
     GoogleMap map;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        ButterKnife.bind(this);
 
         googleApiClient = new GoogleApiClient.Builder(this)
                 .addApi(LocationServices.API)
@@ -67,16 +104,26 @@ public class MainActivity extends FragmentActivity implements
         locationRequest.setFastestInterval(5000);
         locationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
 
-        info = findViewById(R.id.info);
-        rootView = findViewById(R.id.root);
-        icon = (ImageView) findViewById(R.id.icon);
-        currentTemp = (TextView) findViewById(R.id.current_temp);
-        weatherText = (TextView) findViewById(R.id.day_text);
-        weatherHighLow = (TextView) findViewById(R.id.day_high_low);
-
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.map);
         mapFragment.getMapAsync(this);
+
+        whatsTheWeather.setOnClickListener(this);
+    }
+
+    @Override
+    public void onSaveInstanceState(Bundle outState, PersistableBundle outPersistentState) {
+        super.onSaveInstanceState(outState, outPersistentState);
+        outState.putDouble(STATE_LAT, userLocation.getLatitude());
+        outState.putDouble(STATE_LNG, userLocation.getLongitude());
+    }
+
+    @Override
+    protected void onRestoreInstanceState(Bundle savedInstanceState) {
+        super.onRestoreInstanceState(savedInstanceState);
+        userLocation = new Location("iamkaan");
+        userLocation.setLatitude(savedInstanceState.getDouble(STATE_LAT));
+        userLocation.setLongitude(savedInstanceState.getDouble(STATE_LNG));
     }
 
     @Override
@@ -91,20 +138,22 @@ public class MainActivity extends FragmentActivity implements
     @Override
     protected void onPause() {
         super.onPause();
-        LocationServices.FusedLocationApi.removeLocationUpdates(
-                googleApiClient, this);
+        if (googleApiClient.isConnected()) {
+            LocationServices.FusedLocationApi.removeLocationUpdates(
+                    googleApiClient, this);
+        }
     }
 
     @Override
     public void onMapReady(GoogleMap googleMap) {
+        map = googleMap;
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
                 == PackageManager.PERMISSION_GRANTED) {
-            map = googleMap;
             enableLocation();
         } else {
             if (ActivityCompat.shouldShowRequestPermissionRationale(this,
-                    Manifest.permission.READ_CONTACTS)) {
-                //TODO show explanation to user
+                    Manifest.permission.ACCESS_FINE_LOCATION)) {
+                askForPermission();
             } else {
                 ActivityCompat.requestPermissions(this,
                         new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
@@ -114,7 +163,9 @@ public class MainActivity extends FragmentActivity implements
     }
 
     @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+    public void onRequestPermissionsResult(int requestCode,
+                                           @NonNull String[] permissions,
+                                           @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         switch (requestCode) {
             case PERMISSION_REQUEST_ACCESS_FINE_LOCATION: {
@@ -122,15 +173,22 @@ public class MainActivity extends FragmentActivity implements
                         && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                     enableLocation();
                 } else {
-                    //TODO handle permission denied
+                    askForPermission();
                 }
             }
         }
     }
 
-    private void enableLocation() {
-        map.setMyLocationEnabled(true);
-        googleApiClient.connect();
+    @Override
+    public void onClick(View view) {
+        showProgressMessage(getString(R.string.progress_message_fetch_weather));
+
+        pinLocation.setLatitude(map.getCameraPosition().target.latitude);
+        pinLocation.setLongitude(map.getCameraPosition().target.longitude);
+
+        WeatherHelper.getWeatherInfo(getApplicationContext(),
+                pinLocation.getLatitude(),
+                pinLocation.getLongitude(), this);
     }
 
     @Override
@@ -147,12 +205,17 @@ public class MainActivity extends FragmentActivity implements
 
             //means we're getting the location for the first time, so we focus on the location
             if (userLocation == null) {
-                map.animateCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(latitude, longitude), 15f));
+                map.animateCamera(CameraUpdateFactory
+                        .newLatLngZoom(new LatLng(latitude, longitude), 15f));
             }
 
-            userLocation = location;
+            userLocation = new Location(location);
+            pinLocation = new Location(location);
 
-            WeatherHelper.getWeatherInfo(getApplicationContext(), location, this);
+            showProgressMessage(getString(R.string.progress_message_fetch_weather));
+
+            WeatherHelper.getWeatherInfo(getApplicationContext(),
+                    location.getLatitude(), location.getLongitude(), this);
         }
     }
 
@@ -169,8 +232,27 @@ public class MainActivity extends FragmentActivity implements
     @Override
     public void onFetch(Weather result) {
         currentTemp.setText(getString(R.string.x_celsius_degree, result.temp));
-        weatherHighLow.setText(getString(R.string.x_celsius_degree_low_high, result.dayHigh, result.dayLow));
+        weatherHighLow.setText(getString(R.string.x_celsius_degree_low_high,
+                result.dayHigh, result.dayLow));
         weatherText.setText(result.dayText);
+
+        try {
+            Geocoder gcd = new Geocoder(getApplication(), Locale.getDefault());
+            List<Address> addresses = gcd.getFromLocation(
+                    pinLocation.getLatitude(),
+                    pinLocation.getLongitude(),
+                    1);
+            if (addresses.size() > 0)
+                location.setText(addresses.get(0).getLocality());
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        Picasso.with(getApplication())
+                .load(result.iconURL)
+                .fit()
+                .centerInside()
+                .into(icon);
 
         ValueAnimator colorAnimation = ValueAnimator
                 .ofObject(new ArgbEvaluator(),
@@ -184,18 +266,83 @@ public class MainActivity extends FragmentActivity implements
         });
         colorAnimation.start();
 
-        Picasso.with(getApplication())
-                .load(result.iconURL)
-                .error(R.mipmap.ic_launcher)
-                .fit()
-                .centerInside()
-                .into(icon);
-
-        info.setVisibility(View.VISIBLE);
+        showInfo();
     }
 
     @Override
     public void onError(Exception exception) {
+        showErrorMessage(getString(R.string.weather_fetch_error_title),
+                getString(R.string.try_again_button), this);
+    }
 
+    /**
+     * shows the error card with a message that requests permission to use user location
+     */
+    private void askForPermission() {
+        showErrorMessage(
+                getString(R.string.location_access_request),
+                getString(R.string.location_access_allow),
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View view) {
+                        ActivityCompat.requestPermissions(MainActivity.this,
+                                new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                                PERMISSION_REQUEST_ACCESS_FINE_LOCATION);
+                    }
+                });
+    }
+
+    /**
+     * enables my location feature of Google Maps and connects to Google LocationServices API
+     */
+    private void enableLocation() {
+        if (map != null) {
+            map.setMyLocationEnabled(true);
+        }
+        googleApiClient.connect();
+    }
+
+    /**
+     * hides progress card and shows info card
+     */
+    private void showInfo() {
+        progress.setVisibility(View.GONE);
+        info.setVisibility(View.VISIBLE);
+        pin.setVisibility(View.VISIBLE);
+    }
+
+    /**
+     * hides info card and shows progress card after setting progress message
+     * @param message message to show next to circular progress bar
+     */
+    private void showProgressMessage(String message) {
+        progressMessage.setText(message);
+
+        info.setVisibility(View.GONE);
+        errorButton.setVisibility(View.GONE);
+
+        progress.setVisibility(View.VISIBLE);
+        progressBar.setVisibility(View.VISIBLE);
+    }
+
+    /**
+     * hides info card and shows progress card after setting error message
+     * and adds listener to the errorButton
+     * @param message error message to show user
+     * @param buttonTitle title of the button
+     * @param clickListener listener for button clicks
+     */
+    private void showErrorMessage(String message,
+                                  String buttonTitle,
+                                  View.OnClickListener clickListener) {
+        progressMessage.setText(message);
+        errorButton.setText(buttonTitle);
+
+        info.setVisibility(View.GONE);
+        progressBar.setVisibility(View.GONE);
+        progress.setVisibility(View.VISIBLE);
+        errorButton.setVisibility(View.VISIBLE);
+
+        errorButton.setOnClickListener(clickListener);
     }
 }

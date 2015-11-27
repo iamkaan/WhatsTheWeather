@@ -2,4 +2,10 @@
     <string name="app_name">WhatsTheWeather</string>
     <string name="x_celsius_degree">%1$s˚C</string>
     <string name="x_celsius_degree_low_high">%1$s˚C / %2$s˚C</string>
+    <string name="weather_here">WEATHER HERE?</string>
+    <string name="progress_message_fetch_weather">Getting weather info...</string>
+    <string name="location_access_request">To see what\'s the weather outside,\nplease allow us to access your location!</string>
+    <string name="location_access_allow">ALLOW</string>
+    <string name="weather_fetch_error_title">Couldn\'t get the data!</string>
+    <string name="try_again_button">TRY AGAIN</string>
 </resources>
