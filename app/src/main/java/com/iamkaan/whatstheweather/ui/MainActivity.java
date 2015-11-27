@@ -1,13 +1,19 @@
-package com.iamkaan.whatstheweather;
+package com.iamkaan.whatstheweather.ui;
 
 import android.Manifest;
+import android.animation.ArgbEvaluator;
+import android.animation.ValueAnimator;
 import android.content.pm.PackageManager;
+import android.graphics.drawable.ColorDrawable;
 import android.location.Location;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.FragmentActivity;
 import android.support.v4.content.ContextCompat;
+import android.view.View;
+import android.widget.ImageView;
+import android.widget.TextView;
 
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
@@ -19,9 +25,11 @@ import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.LatLng;
+import com.iamkaan.whatstheweather.R;
 import com.iamkaan.whatstheweather.listener.WeatherInfoFetchListener;
 import com.iamkaan.whatstheweather.util.WeatherHelper;
 import com.iamkaan.whatstheweather.util.model.Weather;
+import com.squareup.picasso.Picasso;
 
 
 public class MainActivity extends FragmentActivity implements
@@ -30,6 +38,13 @@ public class MainActivity extends FragmentActivity implements
         GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener, LocationListener, WeatherInfoFetchListener {
 
     private static final int PERMISSION_REQUEST_ACCESS_FINE_LOCATION = 0;
+
+    ImageView icon;
+    TextView currentTemp;
+    TextView weatherText;
+    TextView weatherHighLow;
+    View rootView;
+    View info;
 
     GoogleApiClient googleApiClient;
     LocationRequest locationRequest;
@@ -47,14 +62,21 @@ public class MainActivity extends FragmentActivity implements
                 .addOnConnectionFailedListener(this)
                 .build();
 
-        SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
-                .findFragmentById(R.id.map);
-        mapFragment.getMapAsync(this);
-
         locationRequest = new LocationRequest();
         locationRequest.setInterval(10000);
         locationRequest.setFastestInterval(5000);
         locationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+
+        info = findViewById(R.id.info);
+        rootView = findViewById(R.id.root);
+        icon = (ImageView) findViewById(R.id.icon);
+        currentTemp = (TextView) findViewById(R.id.current_temp);
+        weatherText = (TextView) findViewById(R.id.day_text);
+        weatherHighLow = (TextView) findViewById(R.id.day_high_low);
+
+        SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
+                .findFragmentById(R.id.map);
+        mapFragment.getMapAsync(this);
     }
 
     @Override
@@ -123,14 +145,14 @@ public class MainActivity extends FragmentActivity implements
             double latitude = location.getLatitude();
             double longitude = location.getLongitude();
 
-            //means getting the location for the first time, so we focus on the location
+            //means we're getting the location for the first time, so we focus on the location
             if (userLocation == null) {
                 map.animateCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(latitude, longitude), 15f));
             }
 
-            WeatherHelper.getWeatherInfo(getApplicationContext(), location, this);
-
             userLocation = location;
+
+            WeatherHelper.getWeatherInfo(getApplicationContext(), location, this);
         }
     }
 
@@ -146,7 +168,30 @@ public class MainActivity extends FragmentActivity implements
 
     @Override
     public void onFetch(Weather result) {
+        currentTemp.setText(getString(R.string.x_celsius_degree, result.temp));
+        weatherHighLow.setText(getString(R.string.x_celsius_degree_low_high, result.dayHigh, result.dayLow));
+        weatherText.setText(result.dayText);
 
+        ValueAnimator colorAnimation = ValueAnimator
+                .ofObject(new ArgbEvaluator(),
+                        ((ColorDrawable) rootView.getBackground()).getColor(),
+                        WeatherHelper.getWeatherColor(result.temp));
+        colorAnimation.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+            @Override
+            public void onAnimationUpdate(ValueAnimator animator) {
+                rootView.setBackgroundColor((Integer) animator.getAnimatedValue());
+            }
+        });
+        colorAnimation.start();
+
+        Picasso.with(getApplication())
+                .load(result.iconURL)
+                .error(R.mipmap.ic_launcher)
+                .fit()
+                .centerInside()
+                .into(icon);
+
+        info.setVisibility(View.VISIBLE);
     }
 
     @Override
