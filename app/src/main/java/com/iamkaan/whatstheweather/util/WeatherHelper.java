@@ -2,6 +2,8 @@ package com.iamkaan.whatstheweather.util;
 
 import android.content.Context;
 import android.graphics.Color;
+import android.location.Address;
+import android.location.Geocoder;
 import android.util.Log;
 
 import com.android.volley.Response;
@@ -14,6 +16,10 @@ import com.iamkaan.whatstheweather.util.model.Weather;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+
+import java.io.IOException;
+import java.util.List;
+import java.util.Locale;
 
 /**
  * includes methods for fetching current and daily weather for requested location
@@ -53,12 +59,13 @@ public class WeatherHelper {
 
     /**
      * fetches and parses the weather information for requested location by using Volley
-     * @param context required by Volley
-     * @param lat latitude of the requested location
-     * @param lng longitude of the requested location
+     *
+     * @param context  required by Volley
+     * @param lat      latitude of the requested location
+     * @param lng      longitude of the requested location
      * @param listener listener to track result
      */
-    public static void getWeatherInfo(Context context,
+    public static void getWeatherInfo(final Context context,
                                       final double lat,
                                       final double lng,
                                       final WeatherInfoFetchListener listener) {
@@ -68,7 +75,18 @@ public class WeatherHelper {
                             @Override
                             public void onResponse(String response) {
                                 try {
-                                    listener.onFetch(resolveJson(response));
+                                    Weather result = resolveJson(response);
+                                    try {
+                                        Geocoder gcd = new Geocoder(context, Locale.getDefault());
+                                        List<Address> addresses = gcd.getFromLocation(lat, lng, 1);
+                                        if (addresses.size() > 0) {
+                                            result.location = addresses.get(0).getLocality();
+                                        }
+                                    } catch (IOException e) {
+                                        e.printStackTrace();
+                                    }
+
+                                    listener.onFetch(result);
                                 } catch (JSONException e) {
                                     Log.e(TAG, BASE_URL + getQuery(lat, lng) + URL_SETTINGS);
                                     e.printStackTrace();
@@ -90,6 +108,7 @@ public class WeatherHelper {
 
     /**
      * resolves the expected weather info json
+     *
      * @param jsonString string to create json object
      * @return weather object
      * @throws JSONException if json has unexpected structure
@@ -140,6 +159,7 @@ public class WeatherHelper {
 
     /**
      * creates a query for Yahoo Weather API
+     *
      * @param lat latitude of requested location
      * @param lng longitude of requested location
      * @return query string
@@ -158,6 +178,7 @@ public class WeatherHelper {
 
     /**
      * adds related weather condition code to base icon URLs
+     *
      * @param code weather condition code returned by Yahoo
      * @return icon url provided by Yahoo
      */
@@ -168,6 +189,7 @@ public class WeatherHelper {
     /**
      * warm: orange
      * cold: blue
+     *
      * @param temp temperature in string format and celsius unit
      * @return color int based on the temperature
      */

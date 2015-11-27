@@ -5,11 +5,8 @@ import android.animation.ArgbEvaluator;
 import android.animation.ValueAnimator;
 import android.content.pm.PackageManager;
 import android.graphics.drawable.ColorDrawable;
-import android.location.Address;
-import android.location.Geocoder;
 import android.location.Location;
 import android.os.Bundle;
-import android.os.PersistableBundle;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.FragmentActivity;
@@ -35,10 +32,6 @@ import com.iamkaan.whatstheweather.util.WeatherHelper;
 import com.iamkaan.whatstheweather.util.model.Weather;
 import com.squareup.picasso.Picasso;
 
-import java.io.IOException;
-import java.util.List;
-import java.util.Locale;
-
 import butterknife.Bind;
 import butterknife.ButterKnife;
 
@@ -48,8 +41,12 @@ public class MainActivity extends FragmentActivity implements
         GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener, LocationListener, WeatherInfoFetchListener, View.OnClickListener {
 
     private static final int PERMISSION_REQUEST_ACCESS_FINE_LOCATION = 0;
-    private static final String STATE_LAT = "lat";
-    private static final String STATE_LNG = "lng";
+
+    private static final String STATE_USER_LAT = "user_lat";
+    private static final String STATE_USER_LNG = "user_lng";
+    private static final String STATE_PIN_LAT = "pin_lat";
+    private static final String STATE_PIN_LNG = "pin_lng";
+    private static final String STATE_WEATHER = "weather";
 
     @Bind(R.id.icon)
     ImageView icon;
@@ -87,6 +84,8 @@ public class MainActivity extends FragmentActivity implements
     Location pinLocation;
     GoogleMap map;
 
+    Weather weather;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -112,18 +111,31 @@ public class MainActivity extends FragmentActivity implements
     }
 
     @Override
-    public void onSaveInstanceState(Bundle outState, PersistableBundle outPersistentState) {
-        super.onSaveInstanceState(outState, outPersistentState);
-        outState.putDouble(STATE_LAT, userLocation.getLatitude());
-        outState.putDouble(STATE_LNG, userLocation.getLongitude());
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putDouble(STATE_USER_LAT, userLocation.getLatitude());
+        outState.putDouble(STATE_USER_LNG, userLocation.getLongitude());
+        outState.putDouble(STATE_PIN_LAT, pinLocation.getLatitude());
+        outState.putDouble(STATE_PIN_LNG, pinLocation.getLongitude());
+        outState.putSerializable(STATE_WEATHER, weather);
     }
 
     @Override
     protected void onRestoreInstanceState(Bundle savedInstanceState) {
         super.onRestoreInstanceState(savedInstanceState);
         userLocation = new Location("iamkaan");
-        userLocation.setLatitude(savedInstanceState.getDouble(STATE_LAT));
-        userLocation.setLongitude(savedInstanceState.getDouble(STATE_LNG));
+        pinLocation = new Location("iamkaan");
+        userLocation.setLatitude(savedInstanceState.getDouble(STATE_USER_LAT));
+        userLocation.setLongitude(savedInstanceState.getDouble(STATE_USER_LNG));
+        pinLocation.setLatitude(savedInstanceState.getDouble(STATE_PIN_LAT));
+        pinLocation.setLongitude(savedInstanceState.getDouble(STATE_PIN_LNG));
+        weather = (Weather) savedInstanceState.getSerializable(STATE_WEATHER);
+        if (weather != null) {
+            setWeatherInfoUI();
+        } else {
+            WeatherHelper.getWeatherInfo(getApplicationContext(),
+                    userLocation.getLatitude(), userLocation.getLongitude(), this);
+        }
     }
 
     @Override
@@ -199,7 +211,8 @@ public class MainActivity extends FragmentActivity implements
 
     @Override
     public void onLocationChanged(Location location) {
-        if (userLocation == null || location.distanceTo(userLocation) > 25) {
+        if (userLocation == null ||
+                (location.distanceTo(userLocation) > 25 && location.distanceTo(pinLocation) < 250)) {
             double latitude = location.getLatitude();
             double longitude = location.getLongitude();
 
@@ -231,25 +244,19 @@ public class MainActivity extends FragmentActivity implements
 
     @Override
     public void onFetch(Weather result) {
-        currentTemp.setText(getString(R.string.x_celsius_degree, result.temp));
-        weatherHighLow.setText(getString(R.string.x_celsius_degree_low_high,
-                result.dayHigh, result.dayLow));
-        weatherText.setText(result.dayText);
+        weather = result;
+        setWeatherInfoUI();
+    }
 
-        try {
-            Geocoder gcd = new Geocoder(getApplication(), Locale.getDefault());
-            List<Address> addresses = gcd.getFromLocation(
-                    pinLocation.getLatitude(),
-                    pinLocation.getLongitude(),
-                    1);
-            if (addresses.size() > 0)
-                location.setText(addresses.get(0).getLocality());
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+    private void setWeatherInfoUI() {
+        currentTemp.setText(getString(R.string.x_celsius_degree, weather.temp));
+        weatherHighLow.setText(getString(R.string.x_celsius_degree_low_high,
+                weather.dayHigh, weather.dayLow));
+        weatherText.setText(weather.dayText);
+        location.setText(weather.location);
 
         Picasso.with(getApplication())
-                .load(result.iconURL)
+                .load(weather.iconURL)
                 .fit()
                 .centerInside()
                 .into(icon);
@@ -257,7 +264,7 @@ public class MainActivity extends FragmentActivity implements
         ValueAnimator colorAnimation = ValueAnimator
                 .ofObject(new ArgbEvaluator(),
                         ((ColorDrawable) rootView.getBackground()).getColor(),
-                        WeatherHelper.getWeatherColor(result.temp));
+                        WeatherHelper.getWeatherColor(weather.temp));
         colorAnimation.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
             @Override
             public void onAnimationUpdate(ValueAnimator animator) {
@@ -313,6 +320,7 @@ public class MainActivity extends FragmentActivity implements
 
     /**
      * hides info card and shows progress card after setting progress message
+     *
      * @param message message to show next to circular progress bar
      */
     private void showProgressMessage(String message) {
@@ -328,8 +336,9 @@ public class MainActivity extends FragmentActivity implements
     /**
      * hides info card and shows progress card after setting error message
      * and adds listener to the errorButton
-     * @param message error message to show user
-     * @param buttonTitle title of the button
+     *
+     * @param message       error message to show user
+     * @param buttonTitle   title of the button
      * @param clickListener listener for button clicks
      */
     private void showErrorMessage(String message,
